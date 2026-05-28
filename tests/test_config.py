@@ -2,11 +2,12 @@
 
 from pathlib import Path
 
-from fast_resume.config import claude_projects_dir, codex_sessions_dir
+from fast_resume.config import claude_projects_dir, codex_sessions_dir, pi_sessions_dir
 
 # Where each agent keeps sessions when its variable is unset
 CLAUDE_DEFAULT = Path.home() / ".claude" / "projects"
 CODEX_DEFAULT = Path.home() / ".codex" / "sessions"
+PI_DEFAULT = Path.home() / ".pi" / "agent" / "sessions"
 
 
 class TestClaudeProjectsDir:
@@ -51,3 +52,41 @@ class TestCodexSessionsDir:
     def test_ignores_xdg_config_home(self):
         """Test that XDG_CONFIG_HOME is ignored, as Codex ignores it."""
         assert codex_sessions_dir({"XDG_CONFIG_HOME": "/xdg"}) == CODEX_DEFAULT
+
+
+class TestPiSessionsDir:
+    """Tests for pi_sessions_dir."""
+
+    def test_pi_coding_agent_dir_relocates_home(self):
+        """Test that PI_CODING_AGENT_DIR replaces ~/.pi/agent."""
+        home = Path("/relocated/pi")
+        assert pi_sessions_dir({"PI_CODING_AGENT_DIR": str(home)}) == home / "sessions"
+
+    def test_unset_uses_default_home(self):
+        """Test that an unset PI_CODING_AGENT_DIR falls back to ~/.pi/agent."""
+        assert pi_sessions_dir({}) == PI_DEFAULT
+
+    def test_empty_counts_as_unset(self):
+        """Test that an empty PI_CODING_AGENT_DIR falls back to ~/.pi/agent."""
+        assert pi_sessions_dir({"PI_CODING_AGENT_DIR": ""}) == PI_DEFAULT
+
+    def test_expands_leading_tilde_slash(self):
+        """Test that a leading ~/ expands to the home directory, as pi does."""
+        rel = "pi-home"
+        assert (
+            pi_sessions_dir({"PI_CODING_AGENT_DIR": f"~/{rel}"})
+            == Path.home() / rel / "sessions"
+        )
+
+    def test_expands_bare_tilde(self):
+        """Test that a bare ~ expands to the home directory, as pi does."""
+        assert pi_sessions_dir({"PI_CODING_AGENT_DIR": "~"}) == Path.home() / "sessions"
+
+    def test_keeps_tilde_user_literal(self):
+        """Test that ~user stays literal, since pi expands only ~ and ~/."""
+        home = "~root/pi"
+        assert pi_sessions_dir({"PI_CODING_AGENT_DIR": home}) == Path(home) / "sessions"
+
+    def test_ignores_xdg_config_home(self):
+        """Test that XDG_CONFIG_HOME is ignored, as pi ignores it."""
+        assert pi_sessions_dir({"XDG_CONFIG_HOME": "/xdg"}) == PI_DEFAULT

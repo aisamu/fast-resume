@@ -526,12 +526,13 @@ fast-resume/
 
 fast-resume uses sensible defaults and requires no configuration.
 
-If you relocate Claude Code or Codex through their environment variables (for example into `~/.config`), fast-resume reads the same variables, so export them in the shell you run `fr` from:
+If you relocate Claude Code, Codex, or Pi through their environment variables (for example into `~/.config`), fast-resume reads the same variables, so export them in the shell you run `fr` from:
 
-| Agent       | Variable            | Default     |
-| ----------- | ------------------- | ----------- |
-| Claude Code | `CLAUDE_CONFIG_DIR` | `~/.claude` |
-| Codex       | `CODEX_HOME`        | `~/.codex`  |
+| Agent       | Variable              | Default       |
+| ----------- | --------------------- | ------------- |
+| Claude Code | `CLAUDE_CONFIG_DIR`   | `~/.claude`   |
+| Codex       | `CODEX_HOME`          | `~/.codex`    |
+| Pi          | `PI_CODING_AGENT_DIR` | `~/.pi/agent` |
 
 To clear the index and rebuild from scratch:
 
