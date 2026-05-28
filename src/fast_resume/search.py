@@ -12,6 +12,7 @@ from .adapters import (
     CrushAdapter,
     ErrorCallback,
     OpenCodeAdapter,
+    PiAdapter,
     Session,
     VibeAdapter,
 )
@@ -33,6 +34,7 @@ class SessionSearch:
             CopilotVSCodeAdapter(),
             CrushAdapter(),
             OpenCodeAdapter(),
+            PiAdapter(),
             VibeAdapter(),
         ]
         self._sessions: list[Session] | None = None

@@ -15,6 +15,7 @@ FILTER_KEYS: list[str | None] = [
     None,
     "claude",
     "codex",
+    "pi",
     "copilot-cli",
     "copilot-vscode",
     "crush",

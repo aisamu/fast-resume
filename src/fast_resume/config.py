@@ -6,6 +6,7 @@ from pathlib import Path
 AGENTS = {
     "claude": {"color": "#E87B35", "badge": "claude"},
     "codex": {"color": "#00A67E", "badge": "codex"},
+    "pi": {"color": "#E535AB", "badge": "pi"},
     "opencode": {"color": "#CFCECD", "badge": "opencode"},
     "vibe": {"color": "#FF6B35", "badge": "vibe"},
     "crush": {"color": "#6B51FF", "badge": "crush"},
@@ -16,6 +17,7 @@ AGENTS = {
 # Storage paths
 CLAUDE_DIR = Path.home() / ".claude" / "projects"
 CODEX_DIR = Path.home() / ".codex" / "sessions"
+PI_DIR = Path.home() / ".config" / "pi" / "agent" / "sessions"
 OPENCODE_DIR = Path.home() / ".local" / "share" / "opencode"
 OPENCODE_LEGACY_DIR = OPENCODE_DIR / "storage"
 OPENCODE_DB = OPENCODE_DIR / "opencode.db"

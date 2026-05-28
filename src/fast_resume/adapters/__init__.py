@@ -14,6 +14,7 @@ from .copilot import CopilotAdapter
 from .copilot_vscode import CopilotVSCodeAdapter
 from .crush import CrushAdapter
 from .opencode import OpenCodeAdapter
+from .pi import PiAdapter
 from .vibe import VibeAdapter
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "CopilotVSCodeAdapter",
     "CrushAdapter",
     "OpenCodeAdapter",
+    "PiAdapter",
     "VibeAdapter",
 ]

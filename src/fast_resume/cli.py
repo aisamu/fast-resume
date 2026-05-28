@@ -23,6 +23,7 @@ from .tui import run_tui
         [
             "claude",
             "codex",
+            "pi",
             "copilot-cli",
             "copilot-vscode",
             "crush",
@@ -63,7 +64,7 @@ def main(
 ) -> None:
     """Fast fuzzy finder for coding agent session history.
 
-    Search across Claude Code, Codex CLI, Copilot CLI, Crush, OpenCode, and Vibe sessions.
+    Search across Claude Code, Codex CLI, pi, Copilot CLI, Crush, OpenCode, and Vibe sessions.
     Select a session to resume it with the appropriate agent.
 
     Supports keyword search syntax:
