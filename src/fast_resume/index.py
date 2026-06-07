@@ -2,6 +2,7 @@
 
 import re
 import shutil
+import threading
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -59,6 +60,13 @@ class TantivyIndex:
         self.index_path = index_path
         self._index: tantivy.Index | None = None
         self._schema: tantivy.Schema | None = None
+        self._writer: tantivy.IndexWriter | None = None
+        # Serializes writer creation AND use. tantivy permits only one
+        # IndexWriter per directory, and a single writer is not safe to
+        # drive from multiple threads concurrently. The TUI runs indexing
+        # in background workers that can overlap (exclusive-worker
+        # cancel/restart), so guard every write with this lock.
+        self._writer_lock = threading.RLock()
         self._version_file = index_path / _VERSION_FILE
 
     def _build_schema(self) -> tantivy.Schema:
@@ -103,10 +111,32 @@ class TantivyIndex:
 
     def _clear(self) -> None:
         """Clear the index directory."""
+        # Drop the writer first so it releases the directory lock before
+        # the directory is removed.
+        self._writer = None
         self._index = None
         self._schema = None
         if self.index_path.exists():
             shutil.rmtree(self.index_path)
+
+    def _get_writer(self) -> tantivy.IndexWriter:
+        """Return a single, long-lived IndexWriter, created on first use.
+
+        tantivy permits only one IndexWriter per directory and holds the
+        exclusive directory lock for that writer's entire lifetime. The
+        previous code created a fresh ``index.writer()`` inside every
+        delete/add/update call; when the TUI's background indexing worker
+        overlapped with itself (exclusive-worker cancel + restart) or with
+        another writer, two ``index.writer()`` calls raced for the lock and
+        failed intermittently with ``LockBusy``. Caching one writer and
+        reusing it means the lock is acquired exactly once, so the race
+        cannot happen.
+
+        Must be called with ``self._writer_lock`` held.
+        """
+        if self._writer is None:
+            self._writer = self._ensure_index().writer()
+        return self._writer
 
     def _ensure_index(self) -> tantivy.Index:
         """Ensure the index is loaded or created."""
@@ -406,61 +436,61 @@ class TantivyIndex:
         if not session_ids:
             return
 
-        index = self._ensure_index()
-        writer = index.writer()
-        for sid in session_ids:
-            writer.delete_documents_by_term("id", sid)
-        writer.commit()
+        with self._writer_lock:
+            writer = self._get_writer()
+            for sid in session_ids:
+                writer.delete_documents_by_term("id", sid)
+            writer.commit()
 
     def add_sessions(self, sessions: list[Session]) -> None:
         """Add sessions to the index."""
         if not sessions:
             return
 
-        index = self._ensure_index()
-        writer = index.writer()
-        for session in sessions:
-            writer.add_document(
-                tantivy.Document(
-                    id=session.id,
-                    title=session.title,
-                    directory=session.directory,
-                    agent=session.agent,
-                    content=session.content,
-                    timestamp=session.timestamp.timestamp(),
-                    message_count=session.message_count,
-                    mtime=session.mtime,
-                    yolo=session.yolo,
+        with self._writer_lock:
+            writer = self._get_writer()
+            for session in sessions:
+                writer.add_document(
+                    tantivy.Document(
+                        id=session.id,
+                        title=session.title,
+                        directory=session.directory,
+                        agent=session.agent,
+                        content=session.content,
+                        timestamp=session.timestamp.timestamp(),
+                        message_count=session.message_count,
+                        mtime=session.mtime,
+                        yolo=session.yolo,
+                    )
                 )
-            )
-        writer.commit()
+            writer.commit()
 
     def update_sessions(self, sessions: list[Session]) -> None:
         """Update sessions in the index (delete then add in a single transaction)."""
         if not sessions:
             return
 
-        index = self._ensure_index()
-        writer = index.writer()
-        # Delete existing documents first
-        for session in sessions:
-            writer.delete_documents_by_term("id", session.id)
-        # Add new versions
-        for session in sessions:
-            writer.add_document(
-                tantivy.Document(
-                    id=session.id,
-                    title=session.title,
-                    directory=session.directory,
-                    agent=session.agent,
-                    content=session.content,
-                    timestamp=session.timestamp.timestamp(),
-                    message_count=session.message_count,
-                    mtime=session.mtime,
-                    yolo=session.yolo,
+        with self._writer_lock:
+            writer = self._get_writer()
+            # Delete existing documents first
+            for session in sessions:
+                writer.delete_documents_by_term("id", session.id)
+            # Add new versions
+            for session in sessions:
+                writer.add_document(
+                    tantivy.Document(
+                        id=session.id,
+                        title=session.title,
+                        directory=session.directory,
+                        agent=session.agent,
+                        content=session.content,
+                        timestamp=session.timestamp.timestamp(),
+                        message_count=session.message_count,
+                        mtime=session.mtime,
+                        yolo=session.yolo,
+                    )
                 )
-            )
-        writer.commit()
+            writer.commit()
 
     def search(
         self,
