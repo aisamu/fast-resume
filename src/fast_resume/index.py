@@ -76,6 +76,9 @@ class TantivyIndex:
         schema_builder.add_text_field("id", stored=True, tokenizer_name="raw")
         # Title - stored and indexed for search
         schema_builder.add_text_field("title", stored=True)
+        # Name - custom session name (Claude /rename, pi session_info);
+        # stored and indexed so sessions are findable by what they're named.
+        schema_builder.add_text_field("name", stored=True)
         # Directory - stored with raw tokenizer for regex substring matching
         schema_builder.add_text_field("directory", stored=True, tokenizer_name="raw")
         # Agent - stored for filtering (raw tokenizer to preserve hyphens)
@@ -427,6 +430,7 @@ class TantivyIndex:
                 message_count=doc.get_first("message_count") or 0,
                 mtime=doc.get_first("mtime") or 0.0,
                 yolo=doc.get_first("yolo") or False,
+                name=doc.get_first("name") or "",
             )
         except Exception:
             return None
@@ -454,6 +458,7 @@ class TantivyIndex:
                     tantivy.Document(
                         id=session.id,
                         title=session.title,
+                        name=session.name,
                         directory=session.directory,
                         agent=session.agent,
                         content=session.content,
@@ -481,6 +486,7 @@ class TantivyIndex:
                     tantivy.Document(
                         id=session.id,
                         title=session.title,
+                        name=session.name,
                         directory=session.directory,
                         agent=session.agent,
                         content=session.content,
@@ -764,7 +770,7 @@ class TantivyIndex:
         This provides typo tolerance while favoring exact matches.
         """
         # Exact match query (boosted) - uses BM25 scoring
-        exact_query = index.parse_query(query, ["title", "content"])
+        exact_query = index.parse_query(query, ["title", "content", "name"])
         boosted_exact = tantivy.Query.boost_query(exact_query, 5.0)
 
         # Fuzzy match queries for typo tolerance
@@ -772,18 +778,22 @@ class TantivyIndex:
         for term in query.split():
             if not term:
                 continue
-            # Fuzzy query for title and content
+            # Fuzzy query for title, content, and name
             fuzzy_title = tantivy.Query.fuzzy_term_query(
                 schema, "title", term, distance=1, prefix=True
             )
             fuzzy_content = tantivy.Query.fuzzy_term_query(
                 schema, "content", term, distance=1, prefix=True
             )
-            # Either field can match
+            fuzzy_name = tantivy.Query.fuzzy_term_query(
+                schema, "name", term, distance=1, prefix=True
+            )
+            # Any field can match
             term_query = tantivy.Query.boolean_query(
                 [
                     (tantivy.Occur.Should, fuzzy_title),
                     (tantivy.Occur.Should, fuzzy_content),
+                    (tantivy.Occur.Should, fuzzy_name),
                 ]
             )
             fuzzy_parts.append((tantivy.Occur.Must, term_query))

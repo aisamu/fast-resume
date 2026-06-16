@@ -17,11 +17,13 @@ from .utils import (
 
 
 # Column width breakpoints: (min_width, agent, dir, msgs, date)
+# The first column shows the agent icon + the session's custom name, so it
+# is wider than a bare agent badge would need; names ellipsize past it.
 _COL_WIDTHS = [
-    (120, 12, 30, 6, 18),  # Wide
-    (90, 12, 22, 5, 15),  # Medium
-    (60, 12, 16, 5, 12),  # Narrow
-    (0, 11, 0, 4, 10),  # Very narrow (hide directory)
+    (120, 26, 30, 6, 18),  # Wide
+    (90, 22, 22, 5, 15),  # Medium
+    (60, 18, 16, 5, 12),  # Narrow
+    (0, 14, 0, 4, 10),  # Very narrow (hide directory)
 ]
 
 
@@ -59,7 +61,7 @@ class ResultsTable(DataTable):
             self._col_dir,
             self._col_msgs,
             self._col_date,
-        ) = self.add_columns("Agent", "Title", "Directory", "Turns", "Date")
+        ) = self.add_columns("Session", "Title", "Directory", "Turns", "Date")
         self._update_responsive_widths()
 
     def on_resize(self) -> None:
@@ -129,8 +131,9 @@ class ResultsTable(DataTable):
             return
 
         for session in self._displayed_sessions:
-            # Get agent icon (image or text fallback)
-            icon = get_agent_icon(session.agent)
+            # First column: agent icon + the session's custom name when set,
+            # else the agent badge as a fallback label.
+            icon = get_agent_icon(session.agent, label=session.name or None)
 
             # Title - truncate and highlight matches
             title = highlight_matches(
