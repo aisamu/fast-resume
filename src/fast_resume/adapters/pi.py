@@ -64,6 +64,7 @@ class PiAdapter(BaseSessionAdapter):
             session_id = ""
             directory = ""
             title = ""
+            session_name = ""  # pi's explicit session_info name
             # mtime reflects last activity → recency sort, matching other adapters
             timestamp = datetime.fromtimestamp(session_file.stat().st_mtime)
             messages: list[str] = []
@@ -88,6 +89,7 @@ class PiAdapter(BaseSessionAdapter):
                         name = data.get("name", "")
                         if name:
                             title = name
+                            session_name = name
                     elif msg_type == "message":
                         message = data.get("message", {})
                         role = message.get("role", "")
@@ -127,6 +129,7 @@ class PiAdapter(BaseSessionAdapter):
                 content=full_content,
                 message_count=turn_count,
                 yolo=False,
+                name=session_name,
             )
         except OSError as e:
             error = ParseError(

@@ -48,6 +48,7 @@ class ClaudeAdapter(BaseSessionAdapter):
         try:
             first_user_message = ""
             directory = ""
+            custom_name = ""  # Claude /rename writes a `custom-title` line
             timestamp = datetime.fromtimestamp(session_file.stat().st_mtime)
             messages: list[str] = []
             # Count conversation turns (user + assistant, not tool results)
@@ -64,6 +65,12 @@ class ClaudeAdapter(BaseSessionAdapter):
                         continue
 
                     msg_type = data.get("type", "")
+
+                    # Custom session name from `/rename` (last one wins).
+                    if msg_type == "custom-title":
+                        ct = data.get("customTitle", "")
+                        if ct:
+                            custom_name = ct
 
                     # Get directory from user message
                     if msg_type == "user" and not directory:
@@ -154,6 +161,7 @@ class ClaudeAdapter(BaseSessionAdapter):
                 timestamp=timestamp,
                 content=full_content,
                 message_count=turn_count,
+                name=custom_name,
             )
         except OSError as e:
             error = ParseError(

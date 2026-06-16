@@ -49,6 +49,7 @@ class Session:
     message_count: int = 0  # Number of user + assistant messages
     mtime: float = 0.0  # File modification time for incremental updates
     yolo: bool = False  # Session was started with auto-approve/skip-permissions
+    name: str = ""  # Custom session name (e.g. Claude /rename), distinct from title
 
 
 @dataclass

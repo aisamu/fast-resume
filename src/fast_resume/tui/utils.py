@@ -23,9 +23,15 @@ ASSETS_DIR = Path(__file__).parent.parent / "assets"
 _icon_cache: dict[str, Any] = {}
 
 
-def get_agent_icon(agent: str) -> RenderableType:
-    """Get the icon + name renderable for an agent."""
+def get_agent_icon(agent: str, label: str | None = None) -> RenderableType:
+    """Get the icon + label renderable for an agent.
+
+    The label defaults to the agent's badge (e.g. "claude"). Pass a custom
+    session name to show that instead — the icon still conveys the agent, so
+    the text can carry the session's own name.
+    """
     agent_config = AGENTS.get(agent, {"color": "white", "badge": agent})
+    text = label if label else agent_config["badge"]
 
     if agent not in _icon_cache:
         icon_path = ASSETS_DIR / f"{agent}.png"
@@ -38,15 +44,15 @@ def get_agent_icon(agent: str) -> RenderableType:
             _icon_cache[agent] = None
 
     icon = _icon_cache[agent]
-    name = Text(agent_config["badge"])
+    name = Text(text, no_wrap=True, overflow="ellipsis")
     name.stylize(agent_config["color"])
 
     if icon is not None:
-        # Combine icon and name horizontally
+        # Combine icon and label horizontally
         return Columns([icon, name], padding=(0, 1), expand=False)
 
-    # Fallback to just colored name with a dot
-    badge = Text(f"● {agent_config['badge']}")
+    # Fallback to just colored label with a dot
+    badge = Text(f"● {text}", no_wrap=True, overflow="ellipsis")
     badge.stylize(agent_config["color"], 0, 1)  # Color just the dot
     return badge
 
