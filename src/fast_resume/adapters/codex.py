@@ -19,6 +19,39 @@ class CodexAdapter(BaseSessionAdapter):
 
     def __init__(self, sessions_dir: Path | None = None) -> None:
         self._sessions_dir = sessions_dir if sessions_dir is not None else CODEX_DIR
+        self._name_index: dict[str, str] | None = None
+
+    def _load_name_index(self) -> dict[str, str]:
+        """Map session id -> user-assigned name from `session_index.jsonl`.
+
+        Codex stores custom session names (set in its TUI) not in the
+        rollout files but in a sibling `session_index.jsonl` at the codex
+        home root, one JSON object per line:
+        ``{"id": "<uuid>", "thread_name": "<name>", "updated_at": ...}``.
+        Loaded once per adapter instance; later lines win (most recent
+        rename). Missing/unreadable index -> no names (graceful).
+        """
+        if self._name_index is not None:
+            return self._name_index
+        index: dict[str, str] = {}
+        index_file = self._sessions_dir.parent / "session_index.jsonl"
+        try:
+            with open(index_file, "rb") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = orjson.loads(line)
+                    except orjson.JSONDecodeError:
+                        continue
+                    sid = entry.get("id")
+                    name = entry.get("thread_name")
+                    if sid and name:
+                        index[sid] = name
+        except OSError:
+            pass
+        self._name_index = index
+        return index
 
     def find_sessions(self) -> list[Session]:
         """Find all Codex CLI sessions."""
@@ -132,6 +165,9 @@ class CodexAdapter(BaseSessionAdapter):
 
             full_content = "\n\n".join(messages)
 
+            # Custom session name (codex TUI rename), if any.
+            name = self._load_name_index().get(session_id, "")
+
             return Session(
                 id=session_id,
                 agent=self.name,
@@ -141,6 +177,7 @@ class CodexAdapter(BaseSessionAdapter):
                 content=full_content,
                 message_count=turn_count,
                 yolo=yolo,
+                name=name,
             )
         except OSError as e:
             error = ParseError(
