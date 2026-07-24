@@ -14,6 +14,9 @@ class PiAdapter(BaseSessionAdapter):
 
     pi stores one JSONL file per session under
     ~/.config/pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl.
+    Sub-agent/sidechain transcripts are nested one level deeper, inside a
+    <timestamp>_<uuid>/ directory; pi cannot resume those by id, so only
+    top-level session files are scanned (not a recursive rglob).
     Line types of interest:
         - "session": carries the session ``id`` and ``cwd``
         - "session_info": carries a human ``name`` used as the title
@@ -34,7 +37,8 @@ class PiAdapter(BaseSessionAdapter):
             return []
 
         sessions = []
-        for session_file in self._sessions_dir.rglob("*.jsonl"):
+        # Top-level sessions only; nested sub-agent transcripts are excluded.
+        for session_file in self._sessions_dir.glob("*/*.jsonl"):
             session = self._parse_session_file(session_file)
             if session:
                 sessions.append(session)
@@ -200,7 +204,8 @@ class PiAdapter(BaseSessionAdapter):
         """Scan all pi session files."""
         current_files: dict[str, tuple[Path, float]] = {}
 
-        for session_file in self._sessions_dir.rglob("*.jsonl"):
+        # Top-level sessions only; skip nested transcripts (see find_sessions).
+        for session_file in self._sessions_dir.glob("*/*.jsonl"):
             try:
                 mtime = session_file.stat().st_mtime
             except OSError:
