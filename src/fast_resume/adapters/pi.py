@@ -64,7 +64,7 @@ class PiAdapter(BaseSessionAdapter):
             session_id = ""
             directory = ""
             title = ""
-            session_name = ""  # pi's explicit session_info name
+            session_name = ""  # canonical name: session_info or a user-sourced title
             # mtime reflects last activity → recency sort, matching other adapters
             timestamp = datetime.fromtimestamp(session_file.stat().st_mtime)
             messages: list[str] = []
@@ -85,10 +85,27 @@ class PiAdapter(BaseSessionAdapter):
                     if msg_type == "session":
                         session_id = data.get("id", "") or session_id
                         directory = data.get("cwd", "") or directory
+                        # omp and newer pi carry the canonical name as a
+                        # user-sourced title on the session header itself.
+                        if data.get("titleSource") == "user":
+                            header_title = data.get("title", "")
+                            if header_title:
+                                session_name = header_title
+                    elif msg_type == "title":
+                        # A standalone rename record (omp). Only user-sourced
+                        # titles are canonical names; auto/assistant titles are
+                        # display-only. Latest wins (records are chronological).
+                        if (
+                            data.get("source") == "user"
+                            or data.get("titleSource") == "user"
+                        ):
+                            new_title = data.get("title", "")
+                            if new_title:
+                                session_name = new_title
                     elif msg_type == "session_info":
+                        # Older pi format: an explicit session-name record.
                         name = data.get("name", "")
                         if name:
-                            title = name
                             session_name = name
                     elif msg_type == "message":
                         message = data.get("message", {})
@@ -112,11 +129,10 @@ class PiAdapter(BaseSessionAdapter):
             if not user_prompts:
                 return None
 
-            # Prefer pi's own session name; fall back to first user prompt
-            if not title:
-                title = truncate_title(
-                    user_prompts[0], max_length=80, word_break=False
-                )
+            # Prefer the canonical session name; fall back to first user prompt.
+            title = session_name or truncate_title(
+                user_prompts[0], max_length=80, word_break=False
+            )
 
             full_content = "\n\n".join(messages)
 
