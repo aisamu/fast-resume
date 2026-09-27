@@ -1,3 +1,20 @@
+# [2.13.0](https://github.com/angristan/fast-resume/compare/v2.12.0...v2.13.0) (2026-09-27)
+
+
+### Bug Fixes
+
+* **search:** keep recency ranking stable across calls ([b03e23c](https://github.com/angristan/fast-resume/commit/b03e23cb30003961c959a2bcb9d58c2fb51fdd4f))
+
+
+### Features
+
+* **search:** rank recent sessions higher ([63838ce](https://github.com/angristan/fast-resume/commit/63838cef0eb22440abf30c3176f0a56972a0ec5f))
+
+
+### Performance Improvements
+
+* **pi:** parse transcripts in one pass and in parallel ([5236dc7](https://github.com/angristan/fast-resume/commit/5236dc714e151318421a03b465330a0de2c1dbb4))
+
 # [2.12.0](https://github.com/angristan/fast-resume/compare/v2.11.2...v2.12.0) (2026-09-02)
 
 
