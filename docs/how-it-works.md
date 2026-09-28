@@ -20,7 +20,7 @@ Each adapter maps an agent-specific format into the shared `Session` model.
 | --- | --- | --- |
 | Antigravity CLI | `~/.gemini/antigravity-cli/conversations/<id>.db` or `brain/<id>/.system_generated/logs/*.jsonl` | Reads native protobuf-backed SQLite conversations with WAL support, falls back to generated transcripts, and excludes tool results |
 | Claude Code | `$CLAUDE_CONFIG_DIR/projects/<project>/*.jsonl`, title sidecars, and `sessions-index.json` | Reads user and assistant entries, prefers explicit custom titles, and skips agent subprocess files |
-| Codex | `$CODEX_HOME/sessions/**/*.jsonl` | Reads `session_meta`, `response_item`, and `event_msg` records |
+| Codex | `$CODEX_HOME/sessions/**/*.jsonl` | Reads `session_meta`, `response_item`, and `event_msg` records; skips subagent threads such as guardian and review runs |
 | Copilot CLI | `~/.copilot/session-state/**/*.jsonl` | Reads session identity, user messages, assistant messages, and titles |
 | Copilot in VS Code | VS Code chat-session JSON | Reads request text, response values, and workspace references |
 | Crush | Per-project SQLite database | Queries sessions and messages and parses JSON message parts |

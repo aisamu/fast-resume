@@ -80,6 +80,17 @@ impl CodexAdapter {
 
             match msg_type.as_str() {
                 "session_meta" => {
+                    // Subagent threads (guardian, review, spawned agents)
+                    // carry `source: {"subagent": ...}`. They belong to the
+                    // thread that spawned them and are not resumed on their
+                    // own, so they are not sessions.
+                    if payload
+                        .get("source")
+                        .and_then(Value::as_object)
+                        .is_some_and(|source| source.contains_key("subagent"))
+                    {
+                        return None;
+                    }
                     if session_id.is_empty() {
                         session_id = string_at(payload, &["id"]);
                     }
@@ -490,6 +501,55 @@ mod tests {
         let scan = adapter.find_sessions_incremental(&known);
         assert_eq!(scan.new_or_modified.len(), 0);
         assert_eq!(scan.deleted_ids.len(), 0);
+    }
+
+    fn write_rollout_with_source(sessions_dir: &Path, id: &str, source: Value) {
+        fs::create_dir_all(sessions_dir.join("2026/06/21")).unwrap();
+        write_jsonl(
+            &sessions_dir.join(format!("2026/06/21/rollout-{id}.jsonl")),
+            &[
+                json!({"type": "session_meta", "payload": {"id": id, "cwd": "/work/app", "source": source}}),
+                json!({"type": "event_msg", "payload": {"type": "user_message", "message": "Prompt"}}),
+                json!({"type": "response_item", "payload": {"role": "assistant", "content": [{"text": "Answer"}]}}),
+            ],
+        );
+    }
+
+    #[test]
+    fn subagent_threads_are_not_sessions() {
+        let temp = tempdir().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        write_rollout_with_source(&sessions_dir, "user-thread", json!("cli"));
+        write_rollout_with_source(
+            &sessions_dir,
+            "guardian",
+            json!({"subagent": {"other": "guardian"}}),
+        );
+        write_rollout_with_source(&sessions_dir, "review", json!({"subagent": "review"}));
+
+        let sessions = CodexAdapter::new(sessions_dir, temp.path().join("session_index.jsonl"))
+            .find_sessions();
+
+        let ids: Vec<_> = sessions.iter().map(|session| session.id.as_str()).collect();
+        assert_eq!(ids, vec!["user-thread"]);
+    }
+
+    #[test]
+    fn incremental_drops_indexed_subagent_threads() {
+        let temp = tempdir().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        write_rollout_with_source(
+            &sessions_dir,
+            "guardian",
+            json!({"subagent": {"other": "guardian"}}),
+        );
+        let known = KnownSessions::from([(("codex".to_string(), "guardian".to_string()), 1.0)]);
+
+        let scan = CodexAdapter::new(sessions_dir, temp.path().join("session_index.jsonl"))
+            .find_sessions_incremental(&known);
+
+        assert!(scan.new_or_modified.is_empty());
+        assert_eq!(scan.deleted_ids, vec!["guardian"]);
     }
 
     #[test]
