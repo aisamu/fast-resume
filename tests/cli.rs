@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -41,8 +42,31 @@ fn assert_failure(output: Output) -> (String, String) {
     (stdout, stderr)
 }
 
+fn run_fr_with_env(home: &Path, args: &[&str], vars: &[(&str, &OsStr)]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_fr"));
+    command.args(args).env_clear().env("HOME", home);
+    for (name, value) in vars {
+        command.env(name, value);
+    }
+    command.output().unwrap()
+}
+
+fn json_session_ids(stdout: &str) -> Vec<String> {
+    let output: Value = serde_json::from_str(stdout).unwrap();
+    output["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|session| session["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
 fn write_codex_session(home: &Path, id: &str, directory: &str, prompt: &str) -> PathBuf {
-    let session_dir = home.join(".codex/sessions/2026/06/28");
+    write_codex_session_in(&home.join(".codex"), id, directory, prompt)
+}
+
+fn write_codex_session_in(codex_home: &Path, id: &str, directory: &str, prompt: &str) -> PathBuf {
+    let session_dir = codex_home.join("sessions/2026/06/28");
     fs::create_dir_all(&session_dir).unwrap();
     let session_file = session_dir.join(format!("rollout-2026-06-28T12-00-00-{id}.jsonl"));
     let rows = [
@@ -55,7 +79,11 @@ fn write_codex_session(home: &Path, id: &str, directory: &str, prompt: &str) -> 
 }
 
 fn write_claude_session(home: &Path, id: &str, directory: &str, prompt: &str) -> PathBuf {
-    let session_dir = home.join(".claude/projects/project");
+    write_claude_session_in(&home.join(".claude"), id, directory, prompt)
+}
+
+fn write_claude_session_in(claude_home: &Path, id: &str, directory: &str, prompt: &str) -> PathBuf {
+    let session_dir = claude_home.join("projects/project");
     fs::create_dir_all(&session_dir).unwrap();
     let session_file = session_dir.join(format!("{id}.jsonl"));
     let rows = [
@@ -521,6 +549,79 @@ fn relative_xdg_cache_home_is_ignored() {
             .join(".cache/fast-resume/tantivy_index/meta.json")
             .is_file()
     );
+}
+
+#[test]
+fn claude_config_dir_replaces_the_default_claude_home() {
+    let temp = TempDir::new().unwrap();
+    let claude_home = temp.path().join("xdg/claude");
+    write_claude_session(
+        temp.path(),
+        "claude-default",
+        "/repo/default",
+        "Default Claude home",
+    );
+    write_claude_session_in(
+        &claude_home,
+        "claude-relocated",
+        "/repo/relocated",
+        "Relocated Claude home",
+    );
+
+    let (stdout, _) = assert_success(run_fr_with_env(
+        temp.path(),
+        &["--json", "--all"],
+        &[("CLAUDE_CONFIG_DIR", claude_home.as_os_str())],
+    ));
+
+    assert_eq!(json_session_ids(&stdout), ["claude-relocated"]);
+}
+
+#[test]
+fn empty_claude_config_dir_uses_the_default_claude_home() {
+    let temp = TempDir::new().unwrap();
+    write_claude_session(
+        temp.path(),
+        "claude-default",
+        "/repo/default",
+        "Default Claude home",
+    );
+
+    let (stdout, _) = assert_success(run_fr_with_env(
+        temp.path(),
+        &["--json", "--all"],
+        &[("CLAUDE_CONFIG_DIR", OsStr::new(""))],
+    ));
+
+    assert_eq!(json_session_ids(&stdout), ["claude-default"]);
+}
+
+#[test]
+fn codex_home_relocates_sessions_and_thread_names() {
+    let temp = TempDir::new().unwrap();
+    let codex_home = temp.path().join("xdg/codex");
+    write_codex_session_in(
+        &codex_home,
+        "codex-relocated",
+        "/repo/relocated",
+        "Relocated Codex prompt",
+    );
+    write_jsonl(
+        &codex_home.join("session_index.jsonl"),
+        &[json!({"id": "codex-relocated", "thread_name": "Relocated Codex thread"})],
+    );
+
+    let (stdout, _) = assert_success(run_fr_with_env(
+        temp.path(),
+        &["--json", "--all"],
+        &[("CODEX_HOME", codex_home.as_os_str())],
+    ));
+
+    let output: Value = serde_json::from_str(&stdout).unwrap();
+    let sessions = output["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["id"], "codex-relocated");
+    assert_eq!(sessions[0]["title"], "Relocated Codex thread");
 }
 
 #[test]

@@ -173,15 +173,21 @@ pub fn index_dir() -> PathBuf {
 }
 
 pub fn claude_dir() -> PathBuf {
-    home_dir().join(".claude").join("projects")
+    env_path("CLAUDE_CONFIG_DIR")
+        .unwrap_or_else(|| home_dir().join(".claude"))
+        .join("projects")
 }
 
 pub fn codex_dir() -> PathBuf {
-    home_dir().join(".codex").join("sessions")
+    codex_home().join("sessions")
 }
 
 pub fn codex_session_index_file() -> PathBuf {
-    home_dir().join(".codex").join("session_index.jsonl")
+    codex_home().join("session_index.jsonl")
+}
+
+fn codex_home() -> PathBuf {
+    env_path("CODEX_HOME").unwrap_or_else(|| home_dir().join(".codex"))
 }
 
 pub fn antigravity_dir() -> PathBuf {

@@ -19,8 +19,8 @@ Each adapter maps an agent-specific format into the shared `Session` model.
 | Agent | Format | Parsing strategy |
 | --- | --- | --- |
 | Antigravity CLI | `~/.gemini/antigravity-cli/conversations/<id>.db` or `brain/<id>/.system_generated/logs/*.jsonl` | Reads native protobuf-backed SQLite conversations with WAL support, falls back to generated transcripts, and excludes tool results |
-| Claude Code | `~/.claude/projects/<project>/*.jsonl`, title sidecars, and `sessions-index.json` | Reads user and assistant entries, prefers explicit custom titles, and skips agent subprocess files |
-| Codex | `~/.codex/sessions/**/*.jsonl` | Reads `session_meta`, `response_item`, and `event_msg` records |
+| Claude Code | `$CLAUDE_CONFIG_DIR/projects/<project>/*.jsonl`, title sidecars, and `sessions-index.json` | Reads user and assistant entries, prefers explicit custom titles, and skips agent subprocess files |
+| Codex | `$CODEX_HOME/sessions/**/*.jsonl` | Reads `session_meta`, `response_item`, and `event_msg` records |
 | Copilot CLI | `~/.copilot/session-state/**/*.jsonl` | Reads session identity, user messages, assistant messages, and titles |
 | Copilot in VS Code | VS Code chat-session JSON | Reads request text, response values, and workspace references |
 | Crush | Per-project SQLite database | Queries sessions and messages and parses JSON message parts |
@@ -31,7 +31,7 @@ Each adapter maps an agent-specific format into the shared `Session` model.
 | Pi | `~/.pi/agent/sessions/**/*.jsonl` | Reads session headers, user and assistant messages, names, visible custom messages, and summaries |
 | Vibe | `meta.json` and `messages.jsonl` | Reads metadata, role-based content, and auto-approve state |
 
-Grok discovery respects `GROK_HOME`. Kimi Code discovery uses `$KIMI_CODE_HOME/sessions/`, defaulting to `~/.kimi-code/sessions/`. Pi discovery respects `PI_CODING_AGENT_SESSION_DIR`, `PI_CODING_AGENT_DIR`, and the global `settings.json` `sessionDir`. Project-local `sessionDir` overrides outside that configured store cannot be discovered automatically.
+Claude Code discovery uses `$CLAUDE_CONFIG_DIR/projects/`, defaulting to `~/.claude/projects/`. Codex discovery reads sessions and `session_index.jsonl` thread names from `$CODEX_HOME`, defaulting to `~/.codex`. Grok discovery respects `GROK_HOME`. Kimi Code discovery uses `$KIMI_CODE_HOME/sessions/`, defaulting to `~/.kimi-code/sessions/`. Pi discovery respects `PI_CODING_AGENT_SESSION_DIR`, `PI_CODING_AGENT_DIR`, and the global `settings.json` `sessionDir`. Project-local `sessionDir` overrides outside that configured store cannot be discovered automatically.
 
 The normalized model contains:
 
