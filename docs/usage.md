@@ -120,11 +120,16 @@ fr --stats
     "limit": 10,
     "returned": 10,
     "next_offset": 10
+  },
+  "agents": {
+    "codex": {"badge": "codex", "color": [0, 166, 126], "light_color": [0, 115, 85]}
   }
 }
 ```
 
 Continue with the same query and filters plus `--offset <next_offset>` only while `meta.state` is `more`. Stop on `complete` or `past_end`. `--all` returns every match from the requested offset; it conflicts with an explicit `--limit`.
+
+`agents` has an entry for every agent a session's `agent` can name (the example shows one), with the badge and colors the TUI draws it in: `color` for dark themes, `light_color` for light ones, each `[r, g, b]`, or `null` for a color the terminal defines. A program that lists sessions itself can match the TUI without copying its palette.
 
 The JSON session objects omit indexed conversation content and internal refresh fields. `name` is the name a user assigned explicitly (a Claude custom title, a Codex thread name, or a Pi session name), or `null` when none was recorded; `title` falls back to generated titles and the opening prompt, so only `name` is safe to treat as identity. `--yolo` changes supported `resume_command` values but never starts a session in JSON mode.
 

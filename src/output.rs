@@ -1,11 +1,14 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use ratatui::style::Color;
 use serde::Serialize;
 
 use crate::adapters::adapter_for;
+use crate::config::AGENTS;
 use crate::model::Session;
 
 pub const DEFAULT_LIST_LIMIT: usize = 50;
@@ -69,6 +72,40 @@ struct SessionListOutput<'a> {
     schema_version: u32,
     sessions: Vec<SessionOutput<'a>>,
     meta: PaginationMeta,
+    agents: BTreeMap<&'static str, AgentStyleOutput>,
+}
+
+/// How the TUI draws an agent, for consumers that draw sessions themselves.
+#[derive(Debug, Serialize)]
+struct AgentStyleOutput {
+    badge: &'static str,
+    color: Option<[u8; 3]>,
+    light_color: Option<[u8; 3]>,
+}
+
+/// Every agent `fr` knows, keyed as a session's `agent`, with the badge and the
+/// dark- and light-theme colors the TUI draws it in.
+/// Post: one entry per `config::AGENT_ORDER` key.
+fn agent_palette() -> BTreeMap<&'static str, AgentStyleOutput> {
+    AGENTS
+        .iter()
+        .map(|(&key, agent)| {
+            let style = AgentStyleOutput {
+                badge: agent.badge,
+                color: rgb(agent.color),
+                light_color: rgb(agent.light_color),
+            };
+            (key, style)
+        })
+        .collect()
+}
+
+/// `[r, g, b]` for an RGB color; `None` for one the terminal defines.
+fn rgb(color: Color) -> Option<[u8; 3]> {
+    match color {
+        Color::Rgb(r, g, b) => Some([r, g, b]),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -119,6 +156,7 @@ pub fn print_sessions_json(
             returned,
             next_offset: has_more.then_some(offset.saturating_add(returned)),
         },
+        agents: agent_palette(),
     };
 
     let stdout = io::stdout();
@@ -174,9 +212,13 @@ fn truncate_for_terminal(value: &str, width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use chrono::Local;
+    use serde_json::json;
 
     use super::*;
+    use crate::config::AGENT_ORDER;
 
     #[test]
     fn pagination_state_distinguishes_boundaries() {
@@ -193,6 +235,7 @@ mod tests {
                 returned: 1,
                 next_offset: Some(1),
             },
+            agents: BTreeMap::new(),
         })
         .unwrap();
 
@@ -218,5 +261,33 @@ mod tests {
 
         assert_eq!(json[0]["name"], "Named");
         assert!(json[1]["name"].is_null());
+    }
+
+    #[test]
+    fn agent_palette_has_an_entry_per_agent() {
+        let palette = agent_palette();
+
+        let keys: BTreeSet<&str> = palette.keys().copied().collect();
+        assert_eq!(keys, AGENT_ORDER.into_iter().collect::<BTreeSet<_>>());
+    }
+
+    #[test]
+    fn agent_palette_carries_the_tui_badge_and_rgb_colors() {
+        let palette = serde_json::to_value(agent_palette()).unwrap();
+
+        for (key, agent) in AGENTS.iter() {
+            let (Color::Rgb(r, g, b), Color::Rgb(lr, lg, lb)) = (agent.color, agent.light_color)
+            else {
+                panic!("{key} is not styled in RGB");
+            };
+            assert_eq!(palette[*key]["badge"], agent.badge);
+            assert_eq!(palette[*key]["color"], json!([r, g, b]));
+            assert_eq!(palette[*key]["light_color"], json!([lr, lg, lb]));
+        }
+    }
+
+    #[test]
+    fn a_color_without_rgb_components_is_reported_as_null() {
+        assert_eq!(rgb(Color::Reset), None);
     }
 }

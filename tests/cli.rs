@@ -810,3 +810,29 @@ fn json_empty_results_and_invalid_pagination_are_explicit() {
         assert!(!stderr.is_empty());
     }
 }
+
+#[test]
+fn json_listing_carries_the_style_of_each_listed_agent() {
+    let temp = TempDir::new().unwrap();
+    write_codex_session(temp.path(), "styled123", "/work/styled", "Styled prompt");
+
+    let (stdout, _) = assert_success(run_fr(temp.path(), &["--json", "--all"]));
+    let output: Value = serde_json::from_str(&stdout).unwrap();
+
+    let sessions = output["sessions"].as_array().unwrap();
+    assert!(!sessions.is_empty());
+    for session in sessions {
+        let style = &output["agents"][session["agent"].as_str().unwrap()];
+        assert!(
+            style["badge"].is_string(),
+            "agents[{}] has no badge",
+            session["agent"]
+        );
+        assert_eq!(
+            style["color"].as_array().map(Vec::len),
+            Some(3),
+            "agents[{}].color is not [r, g, b]",
+            session["agent"]
+        );
+    }
+}
