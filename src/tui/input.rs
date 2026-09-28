@@ -158,7 +158,8 @@ fn finish_action(
     match action {
         PendingAction::Resume => Ok(Some(TuiExit::Resume {
             command,
-            directory: session.directory,
+            directory: session.directory.clone(),
+            session: Box::new(session),
         })),
         PendingAction::Copy => {
             let command = shell_join(&command);

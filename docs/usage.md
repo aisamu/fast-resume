@@ -132,6 +132,16 @@ Non-interactive calls refresh the index first. If another `fr` process holds the
 
 Run `fr --agent-context` to print the bundled Agent Skill for coding-agent use.
 
+### Picking a session for another program
+
+`fr --pick <FILE>` opens the TUI, but choosing a session writes it to `FILE` instead of resuming it, so a launcher can resume the session its own way:
+
+```json
+{"schema_version": 1, "session": {"id": "abc123", "agent": "codex", "title": "Review API authentication", "name": null, "directory": "/work/backend", "timestamp": "2026-07-15T12:00:00+02:00", "message_count": 8, "resume_command": ["codex", "resume", "abc123"]}}
+```
+
+The session object matches `--json`, except that `resume_command` is exactly the command the TUI would have run, including a yolo choice made in its prompt. Quitting without a choice writes `"session": null`. The TUI draws on the terminal, so the result goes to a file rather than stdout.
+
 ## Command reference
 
 ```text
@@ -155,6 +165,8 @@ Options:
                           (honors -a and -d filters)
       --agent-context     Print concise instructions for coding agents
       --yolo              Force auto-approve flags where supported
+      --pick <FILE>       Write the session chosen in the TUI as JSON to FILE
+                          instead of resuming it
       --theme <THEME>      Select auto, dark, or light TUI colors
                           [env: FAST_RESUME_THEME=] [default: auto]
       --images            Enable agent artwork when supported

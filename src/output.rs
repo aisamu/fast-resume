@@ -1,6 +1,8 @@
+use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Serialize;
 
 use crate::adapters::adapter_for;
@@ -8,6 +10,7 @@ use crate::model::Session;
 
 pub const DEFAULT_LIST_LIMIT: usize = 50;
 pub const LIST_SCHEMA_VERSION: u32 = 1;
+pub const PICK_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Serialize)]
 struct SessionOutput<'a> {
@@ -26,6 +29,10 @@ impl<'a> SessionOutput<'a> {
         let resume_command = adapter_for(&session.agent)
             .map(|adapter| adapter.resume_command(session, force_yolo || session.yolo))
             .unwrap_or_default();
+        Self::with_command(session, resume_command)
+    }
+
+    fn with_command(session: &'a Session, resume_command: Vec<String>) -> Self {
         Self {
             id: &session.id,
             agent: &session.agent,
@@ -62,6 +69,24 @@ struct SessionListOutput<'a> {
     schema_version: u32,
     sessions: Vec<SessionOutput<'a>>,
     meta: PaginationMeta,
+}
+
+#[derive(Debug, Serialize)]
+struct PickOutput<'a> {
+    schema_version: u32,
+    session: Option<SessionOutput<'a>>,
+}
+
+/// Write the session a picker chose, or a `null` session when it was
+/// cancelled, as one JSON object. `resume_command` is exactly what the picker
+/// would have run, so the caller can resume the session itself.
+pub fn write_pick_json(path: &Path, picked: Option<(&Session, Vec<String>)>) -> Result<()> {
+    let output = PickOutput {
+        schema_version: PICK_SCHEMA_VERSION,
+        session: picked.map(|(session, command)| SessionOutput::with_command(session, command)),
+    };
+    fs::write(path, serde_json::to_vec(&output)?)
+        .with_context(|| format!("failed to write the picked session to {}", path.display()))
 }
 
 pub fn print_sessions_json(

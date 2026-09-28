@@ -1,6 +1,7 @@
 use std::env;
 use std::io;
 use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
@@ -9,7 +10,9 @@ use clap::{Parser, ValueEnum};
 use fast_resume::adapters::all_adapters;
 use fast_resume::config::{VERSION, index_dir, is_agent};
 use fast_resume::index::SessionIndex;
-use fast_resume::output::{DEFAULT_LIST_LIMIT, print_sessions_json, print_sessions_table};
+use fast_resume::output::{
+    DEFAULT_LIST_LIMIT, print_sessions_json, print_sessions_table, write_pick_json,
+};
 use fast_resume::search::SearchEngine;
 use fast_resume::stats::print_stats;
 use fast_resume::tui::{ThemeMode, TuiExit, run_tui};
@@ -82,6 +85,15 @@ struct Args {
     /// Resume sessions with auto-approve/skip-permissions flags where supported.
     #[arg(long)]
     yolo: bool,
+
+    /// Write the session chosen in the TUI as JSON to FILE instead of
+    /// resuming it; a cancelled pick writes a null session.
+    #[arg(
+        long,
+        value_name = "FILE",
+        conflicts_with_all = ["json", "list_only", "stats", "rebuild"]
+    )]
+    pick: Option<PathBuf>,
 
     /// Retained as a hidden no-op for compatibility with the Python CLI.
     #[arg(long = "no-version-check", hide = true)]
@@ -191,16 +203,34 @@ fn main() -> Result<()> {
         Some(args.image_protocol.into())
     };
 
-    match run_tui(
+    let exit = run_tui(
         query,
         args.agent,
         args.directory,
         args.yolo,
         image_protocol,
         args.theme.into(),
-    )? {
-        TuiExit::Quit => Ok(()),
-        TuiExit::Resume { command, directory } => exec_resume(command, directory),
+    )?;
+    finish_tui(&mut ProcessExecBackend, exit, args.pick.as_deref())
+}
+
+/// Resume the chosen session, or with `--pick` hand it to the caller instead.
+fn finish_tui(backend: &mut impl ExecBackend, exit: TuiExit, pick: Option<&Path>) -> Result<()> {
+    match (exit, pick) {
+        (TuiExit::Quit, None) => Ok(()),
+        (TuiExit::Quit, Some(path)) => write_pick_json(path, None),
+        (
+            TuiExit::Resume {
+                command, session, ..
+            },
+            Some(path),
+        ) => write_pick_json(path, Some((&session, command))),
+        (
+            TuiExit::Resume {
+                command, directory, ..
+            },
+            None,
+        ) => exec_resume_with(backend, command, directory),
     }
 }
 
@@ -265,11 +295,6 @@ fn refreshed_index(no_refresh: bool) -> Result<SessionIndex> {
         );
     })?;
     Ok(index)
-}
-
-fn exec_resume(command: Vec<String>, directory: String) -> Result<()> {
-    let mut backend = ProcessExecBackend;
-    exec_resume_with(&mut backend, command, directory)
 }
 
 trait ExecBackend {
@@ -372,6 +397,75 @@ mod tests {
         assert!(backend.directories.is_empty());
         assert!(backend.commands.is_empty());
         assert!(error.to_string().contains("no resume command"));
+    }
+
+    fn picked_exit(name: &str) -> TuiExit {
+        let mut session = fast_resume::model::Session::new(
+            "abc",
+            "codex",
+            "Title",
+            "/repo",
+            chrono::Local::now(),
+            "content",
+            1,
+        );
+        session.name = name.to_string();
+        TuiExit::Resume {
+            command: vec!["codex".to_string(), "resume".to_string(), "abc".to_string()],
+            directory: "/repo".to_string(),
+            session: Box::new(session),
+        }
+    }
+
+    fn read_pick(path: &Path) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn pick_writes_the_chosen_session_instead_of_resuming() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("pick.json");
+        let mut backend = RecordingExec::default();
+
+        finish_tui(&mut backend, picked_exit("task/subtask"), Some(&path)).unwrap();
+
+        assert!(backend.commands.is_empty());
+        let pick = read_pick(&path);
+        assert_eq!(pick["session"]["name"], "task/subtask");
+        assert_eq!(pick["session"]["directory"], "/repo");
+        assert_eq!(
+            pick["session"]["resume_command"],
+            serde_json::json!(["codex", "resume", "abc"])
+        );
+    }
+
+    #[test]
+    fn cancelled_pick_writes_a_null_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("pick.json");
+        let mut backend = RecordingExec::default();
+
+        finish_tui(&mut backend, TuiExit::Quit, Some(&path)).unwrap();
+
+        assert!(read_pick(&path)["session"].is_null());
+    }
+
+    #[test]
+    fn resume_without_pick_hands_off_to_the_agent() {
+        let mut backend = RecordingExec::default();
+
+        let error = finish_tui(&mut backend, picked_exit("task/subtask"), None).unwrap_err();
+
+        assert_eq!(backend.directories, vec!["/repo"]);
+        assert!(error.to_string().contains("failed to exec codex"));
+    }
+
+    #[test]
+    fn pick_conflicts_with_non_interactive_modes() {
+        for flag in ["--json", "--list", "--stats", "--rebuild"] {
+            let parsed = Args::try_parse_from(["fr", "--pick", "out.json", flag]);
+            assert!(parsed.is_err(), "--pick should conflict with {flag}");
+        }
     }
 
     #[test]

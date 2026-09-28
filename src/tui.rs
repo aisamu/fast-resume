@@ -44,6 +44,9 @@ pub enum TuiExit {
     Resume {
         command: Vec<String>,
         directory: String,
+        /// The chosen session, for callers that hand the choice to another
+        /// program instead of resuming it (`--pick`).
+        session: Box<Session>,
     },
 }
 
@@ -1172,7 +1175,9 @@ mod tests {
             .unwrap();
 
         match exit {
-            super::TuiExit::Resume { command, directory } => {
+            super::TuiExit::Resume {
+                command, directory, ..
+            } => {
                 assert_eq!(
                     command.last().map(String::as_str),
                     Some(original_id.as_str())
@@ -1229,7 +1234,9 @@ mod tests {
             .unwrap();
 
         match exit {
-            super::TuiExit::Resume { command, directory } => {
+            super::TuiExit::Resume {
+                command, directory, ..
+            } => {
                 assert_eq!(command, vec!["crush", "--yolo", "--session", "crush-1"]);
                 assert_eq!(directory, "/tmp/fast-resume");
             }
