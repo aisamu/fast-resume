@@ -68,7 +68,7 @@ impl PiAdapter {
             return None;
         }
 
-        for entry in WalkDir::new(&self.sessions_dir) {
+        for entry in walk_transcripts(&self.sessions_dir) {
             let Ok(entry) = entry else {
                 complete = false;
                 continue;
@@ -184,8 +184,7 @@ impl Adapter for PiAdapter {
         if !self.sessions_dir.exists() {
             return Vec::new();
         }
-        let paths: Vec<PathBuf> = WalkDir::new(&self.sessions_dir)
-            .into_iter()
+        let paths: Vec<PathBuf> = walk_transcripts(&self.sessions_dir)
             .filter_map(Result::ok)
             .filter(|entry| entry.path().extension().and_then(|e| e.to_str()) == Some("jsonl"))
             .map(walkdir::DirEntry::into_path)
@@ -348,6 +347,20 @@ fn is_custom_role(role: &str) -> bool {
 /// role (tool results, bash output, ...) is skipped without being decoded.
 fn role_content_is_indexed(role: &str) -> bool {
     matches!(role, "user" | "assistant") || is_custom_role(role)
+}
+
+/// Walk the store without descending into a session's own directory.
+///
+/// Pi keeps a session's sub-agent transcripts in a directory named after the
+/// session file (`<timestamp>_<sessionId>/`). `pi --session` cannot re-enter
+/// them, so they belong to that session rather than being sessions of their
+/// own. This holds for the per-project layout and for a flat `sessionDir`.
+fn walk_transcripts(root: &Path) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> {
+    WalkDir::new(root).into_iter().filter_entry(|entry| {
+        entry.depth() == 0
+            || !entry.file_type().is_dir()
+            || !is_uuid_like(&pi_session_id_from_path(entry.path()))
+    })
 }
 
 fn pi_session_id_from_path(path: &Path) -> String {
@@ -973,5 +986,73 @@ mod tests {
         let scan = adapter.find_sessions_incremental(&known);
         assert!(scan.new_or_modified.is_empty());
         assert_eq!(scan.deleted_ids, vec!["test123"]);
+    }
+
+    const PARENT_ID: &str = "22222222-2222-4222-8222-222222222222";
+    const SIDECHAIN_ID: &str = "33333333-3333-4333-8333-333333333333";
+
+    /// Write a session transcript plus one sub-agent transcript that Pi
+    /// stores in a directory named after the session file, under `store`.
+    fn write_session_with_sidechain(store: &Path) {
+        let stem = format!("2026-07-15T10-00-00-000Z_{PARENT_ID}");
+        let sidechain_dir = store.join(&stem);
+        fs::create_dir_all(&sidechain_dir).unwrap();
+        for (path, id, prompt) in [
+            (
+                store.join(format!("{stem}.jsonl")),
+                PARENT_ID,
+                "Parent task",
+            ),
+            (
+                sidechain_dir.join("Scout.jsonl"),
+                SIDECHAIN_ID,
+                "Scout sub-task",
+            ),
+        ] {
+            write_jsonl(
+                &path,
+                &[
+                    json!({"type":"session","version":3,"id":id,"timestamp":"2026-07-15T10:00:00.000Z","cwd":"/repo/app"}),
+                    json!({"type":"message","id":"a1","parentId":null,"timestamp":"2026-07-15T10:00:01.000Z","message":{"role":"user","content":prompt}}),
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn sidechain_transcripts_are_not_sessions() {
+        let temp = tempdir().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        write_session_with_sidechain(&sessions_dir.join("--repo-app--"));
+
+        let sessions = PiAdapter::new(sessions_dir).find_sessions();
+        let ids: Vec<_> = sessions.iter().map(|session| session.id.as_str()).collect();
+        assert_eq!(ids, vec![PARENT_ID]);
+    }
+
+    #[test]
+    fn incremental_skips_sidechains_in_a_flat_session_dir() {
+        let temp = tempdir().unwrap();
+        let session_dir = temp.path().join("custom-session-dir");
+        write_session_with_sidechain(&session_dir);
+
+        let scan = PiAdapter::new(session_dir).find_sessions_incremental(&KnownSessions::new());
+        let ids: Vec<_> = scan
+            .new_or_modified
+            .iter()
+            .map(|session| session.id.as_str())
+            .collect();
+        assert_eq!(ids, vec![PARENT_ID]);
+    }
+
+    #[test]
+    fn incremental_drops_previously_indexed_sidechains() {
+        let temp = tempdir().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        write_session_with_sidechain(&sessions_dir.join("--repo-app--"));
+
+        let scan = PiAdapter::new(sessions_dir)
+            .find_sessions_incremental(&known_at_old_mtime(SIDECHAIN_ID));
+        assert_eq!(scan.deleted_ids, vec![SIDECHAIN_ID]);
     }
 }
