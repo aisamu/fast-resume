@@ -239,6 +239,14 @@ struct PiTranscript {
 }
 
 impl PiTranscript {
+    /// Apply a rename; rows are chronological, so the latest one wins.
+    fn rename(&mut self, title: Option<String>) {
+        let title = title.unwrap_or_default();
+        if !title.trim().is_empty() {
+            self.session_name = Some(title.trim().to_string());
+        }
+    }
+
     fn add_row(&mut self, row: PiRow) {
         match row.kind.as_deref().unwrap_or_default() {
             "session" => {
@@ -251,6 +259,18 @@ impl PiTranscript {
                 if self.header_timestamp.is_none() {
                     self.header_timestamp = parse_datetime(row.timestamp.as_deref().unwrap_or(""));
                 }
+                // oh-my-pi and newer Pi record a user-set name on the header.
+                if row.title_source.as_deref() == Some("user") {
+                    self.rename(row.title);
+                }
+            }
+            // oh-my-pi's rename record. Only user-sourced titles name the
+            // session; auto and assistant titles are display text.
+            "title"
+                if row.source.as_deref() == Some("user")
+                    || row.title_source.as_deref() == Some("user") =>
+            {
+                self.rename(row.title);
             }
             "session_info" => {
                 let name = row.name.unwrap_or_default();
@@ -694,6 +714,9 @@ struct PiRow {
     cwd: Option<String>,
     timestamp: Option<String>,
     name: Option<String>,
+    title: Option<String>,
+    source: Option<String>,
+    title_source: Option<String>,
     summary: Option<String>,
     display: Option<bool>,
     content: PiContent,
@@ -721,6 +744,9 @@ impl<'de> Visitor<'de> for PiRowVisitor {
                 "cwd" => row.cwd = map.next_value::<LenientString>()?.0,
                 "timestamp" => row.timestamp = map.next_value::<LenientString>()?.0,
                 "name" => row.name = map.next_value::<LenientString>()?.0,
+                "title" => row.title = map.next_value::<LenientString>()?.0,
+                "source" => row.source = map.next_value::<LenientString>()?.0,
+                "titleSource" => row.title_source = map.next_value::<LenientString>()?.0,
                 "summary" => row.summary = map.next_value::<LenientString>()?.0,
                 "display" => row.display = map.next_value::<LenientBool>()?.0,
                 "content" if kind.is_none_or(|kind| kind == "custom_message") => {
@@ -1057,5 +1083,54 @@ mod tests {
         let scan = PiAdapter::new(sessions_dir)
             .find_sessions_incremental(&known_at_old_mtime(SIDECHAIN_ID));
         assert_eq!(scan.deleted_ids, vec![SIDECHAIN_ID]);
+    }
+
+    /// Parse one transcript made of a header, one prompt, and `extra` rows.
+    fn parse_with_rows(header: Value, extra: &[Value]) -> Session {
+        let temp = tempdir().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        fs::create_dir_all(&sessions_dir).unwrap();
+        let mut rows = vec![
+            header,
+            json!({"type":"message","id":"a1","parentId":null,"timestamp":"2026-07-15T10:00:01.000Z","message":{"role":"user","content":"Opening prompt"}}),
+        ];
+        rows.extend_from_slice(extra);
+        write_jsonl(&sessions_dir.join("session_titles.jsonl"), &rows);
+        let mut sessions = PiAdapter::new(sessions_dir).find_sessions();
+        assert_eq!(sessions.len(), 1);
+        sessions.remove(0)
+    }
+
+    #[test]
+    fn user_sourced_title_records_rename_the_session() {
+        let session = parse_with_rows(
+            json!({"type":"session","id":"titles","cwd":"/repo/app"}),
+            &[
+                json!({"type":"title","v":1,"title":"task/first","source":"user"}),
+                json!({"type":"title","v":1,"title":"task/latest","source":"user"}),
+                json!({"type":"title","v":1,"title":"Auto summary","source":"auto"}),
+            ],
+        );
+        assert_eq!(session.name, "task/latest");
+        assert_eq!(session.title, "task/latest");
+    }
+
+    #[test]
+    fn user_sourced_header_title_names_the_session() {
+        let session = parse_with_rows(
+            json!({"type":"session","id":"titles","cwd":"/repo/app","title":"task/header","titleSource":"user"}),
+            &[],
+        );
+        assert_eq!(session.name, "task/header");
+    }
+
+    #[test]
+    fn auto_titles_do_not_name_the_session() {
+        let session = parse_with_rows(
+            json!({"type":"session","id":"titles","cwd":"/repo/app","title":"Auto header","titleSource":"auto"}),
+            &[json!({"type":"title","v":1,"title":"Auto record","source":"auto"})],
+        );
+        assert_eq!(session.name, "");
+        assert_eq!(session.title, "Opening prompt");
     }
 }
