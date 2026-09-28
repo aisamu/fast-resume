@@ -1,5 +1,7 @@
 """Configuration and constants for fast-resume."""
 
+import os
+from collections.abc import Mapping
 from pathlib import Path
 
 # Agent colors and badges (badge is the display name shown in UI)
@@ -13,9 +15,25 @@ AGENTS = {
     "copilot-vscode": {"color": "#007ACC", "badge": "vscode"},
 }
 
+
+# Resolve each agent's home the way the agent does, so that every indexed
+# session is one its --resume can find. Neither agent reads XDG variables.
+# An empty value counts as unset, matching Codex.
+def claude_projects_dir(environ: Mapping[str, str] = os.environ) -> Path:
+    """Return $CLAUDE_CONFIG_DIR/projects, or ~/.claude/projects if unset."""
+    home = environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"
+    return Path(home) / "projects"
+
+
+def codex_sessions_dir(environ: Mapping[str, str] = os.environ) -> Path:
+    """Return $CODEX_HOME/sessions, or ~/.codex/sessions if unset."""
+    home = environ.get("CODEX_HOME") or Path.home() / ".codex"
+    return Path(home) / "sessions"
+
+
 # Storage paths
-CLAUDE_DIR = Path.home() / ".claude" / "projects"
-CODEX_DIR = Path.home() / ".codex" / "sessions"
+CLAUDE_DIR = claude_projects_dir()
+CODEX_DIR = codex_sessions_dir()
 OPENCODE_DIR = Path.home() / ".local" / "share" / "opencode"
 OPENCODE_LEGACY_DIR = OPENCODE_DIR / "storage"
 OPENCODE_DB = OPENCODE_DIR / "opencode.db"
