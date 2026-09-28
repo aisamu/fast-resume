@@ -14,6 +14,7 @@ struct SessionOutput<'a> {
     id: &'a str,
     agent: &'a str,
     title: &'a str,
+    name: Option<&'a str>,
     directory: &'a str,
     timestamp: &'a chrono::DateTime<chrono::Local>,
     message_count: usize,
@@ -29,6 +30,7 @@ impl<'a> SessionOutput<'a> {
             id: &session.id,
             agent: &session.agent,
             title: &session.title,
+            name: (!session.name.is_empty()).then_some(session.name.as_str()),
             directory: &session.directory,
             timestamp: &session.timestamp,
             message_count: session.message_count,
@@ -175,5 +177,21 @@ mod tests {
         assert!(json["sessions"][0].get("content").is_none());
         assert!(json["sessions"][0].get("mtime").is_none());
         assert!(json["sessions"][0].get("yolo").is_none());
+    }
+
+    #[test]
+    fn explicit_names_are_reported_and_unnamed_sessions_are_null() {
+        let mut named = Session::new("n", "codex", "Named", "/repo", Local::now(), "content", 1);
+        named.name = "Named".to_string();
+        let unnamed = Session::new("u", "codex", "Prompt", "/repo", Local::now(), "content", 1);
+
+        let json = serde_json::to_value([
+            SessionOutput::new(&named, false),
+            SessionOutput::new(&unnamed, false),
+        ])
+        .unwrap();
+
+        assert_eq!(json[0]["name"], "Named");
+        assert!(json[1]["name"].is_null());
     }
 }

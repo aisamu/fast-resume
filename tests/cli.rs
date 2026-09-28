@@ -271,6 +271,45 @@ fn json_uses_claude_custom_title() {
 }
 
 #[test]
+fn json_reports_session_names_separately_from_titles() {
+    let temp = TempDir::new().unwrap();
+    let named = write_claude_session(
+        temp.path(),
+        "claude-named",
+        "/repo/claude",
+        "Original Claude prompt",
+    );
+    let mut transcript = fs::read_to_string(&named).unwrap();
+    transcript.push('\n');
+    transcript.push_str(
+        &json!({"type": "custom-title", "customTitle": "task/subtask", "sessionId": "claude-named"})
+            .to_string(),
+    );
+    fs::write(named, transcript).unwrap();
+    write_codex_session(
+        temp.path(),
+        "codex-unnamed",
+        "/repo/codex",
+        "Unnamed Codex prompt",
+    );
+
+    let (stdout, _) = assert_success(run_fr(temp.path(), &["--json", "--all"]));
+    let output: Value = serde_json::from_str(&stdout).unwrap();
+    let session = |id: &str| {
+        output["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|session| session["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(session("claude-named")["name"], "task/subtask");
+    assert!(session("codex-unnamed")["name"].is_null());
+    assert_eq!(session("codex-unnamed")["title"], "Unnamed Codex prompt");
+}
+
+#[test]
 fn json_uses_claude_sidecar_custom_title() {
     let temp = TempDir::new().unwrap();
     write_claude_session(

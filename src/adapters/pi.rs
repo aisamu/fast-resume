@@ -314,13 +314,14 @@ impl PiTranscript {
         } else {
             self.session_id
         };
-        let title_source = self.session_name.unwrap_or_else(|| {
-            if self.first_user_message.is_empty() {
-                "(no messages)".to_string()
-            } else {
-                self.first_user_message
-            }
-        });
+        let name = self.session_name.unwrap_or_default();
+        let title_source = if !name.is_empty() {
+            name.clone()
+        } else if self.first_user_message.is_empty() {
+            "(no messages)".to_string()
+        } else {
+            self.first_user_message
+        };
         let mut session = Session::new(
             session_id,
             agent,
@@ -332,6 +333,7 @@ impl PiTranscript {
             self.messages.join("\n\n"),
             self.message_count,
         );
+        session.name = name;
         session.mtime = file_mtime_seconds(path);
         Some(session)
     }
@@ -798,6 +800,7 @@ mod tests {
         assert_eq!(session.id, session_id);
         assert_eq!(session.agent, "pi");
         assert_eq!(session.title, "Named Pi session");
+        assert_eq!(session.name, "Named Pi session");
         assert_eq!(session.directory, "/repo/app");
         assert_eq!(session.message_count, 1);
         assert!(session.content.contains("» Implement Pi adapter"));

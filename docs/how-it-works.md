@@ -40,6 +40,7 @@ pub struct Session {
     pub id: String,
     pub agent: String,
     pub title: String,
+    pub name: String,
     pub directory: String,
     pub timestamp: DateTime<Local>,
     pub content: String,

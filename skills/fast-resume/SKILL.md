@@ -29,7 +29,7 @@ Use `fr` as a local session discovery tool. Do not parse its human table.
 
 ## Select and resume
 
-- Compare `title`, `directory`, `timestamp`, `agent`, and `id`.
+- Compare `title`, `name`, `directory`, `timestamp`, `agent`, and `id`. `name` is the user-assigned name or `null`; `title` may be generated.
 - Use `resume_command` as an argument array. Do not rebuild it by splitting or joining shell text.
 - Show the selected session and command before starting another agent process.
 - Run the command from the session's `directory` only after the user asks to resume or approves the handoff.

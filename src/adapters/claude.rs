@@ -153,11 +153,26 @@ impl ClaudeAdapter {
 
         // Claude's sidecar stores the current `/rename` value separately
         // from transcripts and the session index, both of which can lag.
-        let title_source = sidecar_title
-            .or_else(|| (!custom_title.is_empty()).then_some(custom_title))
-            .or_else(|| claude_index_title(path))
-            .or_else(|| (!ai_title.is_empty()).then_some(ai_title))
-            .unwrap_or(first_user_message);
+        // Only those explicit renames name the session; generated summaries
+        // and AI titles are display text.
+        let index_title = claude_index_title(path);
+        let name = sidecar_title
+            .or_else(|| (!custom_title.is_empty()).then(|| custom_title.trim().to_string()))
+            .or_else(|| {
+                index_title
+                    .as_ref()
+                    .filter(|indexed| indexed.custom)
+                    .map(|indexed| indexed.title.clone())
+            })
+            .unwrap_or_default();
+        let title_source = if name.is_empty() {
+            index_title
+                .map(|indexed| indexed.title)
+                .or_else(|| (!ai_title.is_empty()).then_some(ai_title))
+                .unwrap_or(first_user_message)
+        } else {
+            name.clone()
+        };
         let title = truncate_title(&title_source, 100, true);
         let mut session = Session::new(
             path.file_stem()?.to_string_lossy(),
@@ -168,6 +183,7 @@ impl ClaudeAdapter {
             messages.join("\n\n"),
             turns,
         );
+        session.name = name;
         session.mtime = file_mtime_seconds(path);
         Some(session)
     }
@@ -231,8 +247,8 @@ impl ClaudeAdapter {
                 let mut mtime = file_mtime_seconds(&path).max(file_mtime_seconds(
                     &project_dir.join(&session_id).join("custom-title.json"),
                 ));
-                if let Some((_, index_mtime)) = project_index.get(&session_id) {
-                    mtime = mtime.max(*index_mtime);
+                if let Some(indexed) = project_index.get(&session_id) {
+                    mtime = mtime.max(indexed.mtime);
                 }
                 current_files.insert(session_id, (path, mtime));
             }
@@ -306,14 +322,20 @@ fn claude_sidecar_title(session_file: &Path) -> Result<Option<String>, ()> {
     Ok((!title.trim().is_empty()).then(|| title.trim().to_string()))
 }
 
-fn claude_index_title(session_file: &Path) -> Option<String> {
-    let session_id = session_file.file_stem()?.to_string_lossy();
-    claude_project_index(session_file.parent()?)
-        .get(session_id.as_ref())
-        .map(|(title, _)| title.clone())
+/// A session's title from the project's `sessions-index.json`.
+struct IndexedTitle {
+    title: String,
+    /// Whether `title` is the user's `customTitle` rather than a summary.
+    custom: bool,
+    mtime: f64,
 }
 
-fn claude_project_index(project_dir: &Path) -> HashMap<String, (String, f64)> {
+fn claude_index_title(session_file: &Path) -> Option<IndexedTitle> {
+    let session_id = session_file.file_stem()?.to_string_lossy();
+    claude_project_index(session_file.parent()?).remove(session_id.as_ref())
+}
+
+fn claude_project_index(project_dir: &Path) -> HashMap<String, IndexedTitle> {
     let mut titles = HashMap::new();
     let index_file = project_dir.join("sessions-index.json");
     let index_mtime = file_mtime_seconds(&index_file);
@@ -328,10 +350,11 @@ fn claude_project_index(project_dir: &Path) -> HashMap<String, (String, f64)> {
         let session_id = string_at(entry, &["sessionId"]);
         let custom_title = string_at(entry, &["customTitle"]);
         let summary = string_at(entry, &["summary"]);
-        let title = if custom_title.trim().is_empty() {
-            summary.trim()
-        } else {
+        let custom = !custom_title.trim().is_empty();
+        let title = if custom {
             custom_title.trim()
+        } else {
+            summary.trim()
         };
         if session_id.is_empty() || title.is_empty() {
             continue;
@@ -343,7 +366,14 @@ fn claude_project_index(project_dir: &Path) -> HashMap<String, (String, f64)> {
             .map(|value| value / 1000.0)
             .unwrap_or(0.0);
         let mtime = index_mtime.max(modified).max(file_mtime);
-        titles.insert(session_id, (title.to_string(), mtime));
+        titles.insert(
+            session_id,
+            IndexedTitle {
+                title: title.to_string(),
+                custom,
+                mtime,
+            },
+        );
     }
     titles
 }
@@ -518,6 +548,61 @@ mod tests {
 
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].title, "Renamed Claude thread");
+        assert_eq!(sessions[0].name, "Renamed Claude thread");
+    }
+
+    #[test]
+    fn index_custom_title_is_the_session_name() {
+        let temp = tempdir().unwrap();
+        let projects = temp.path().join("projects");
+        let project = projects.join("project-a");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(
+            project.join("session-indexed.jsonl"),
+            json!({"type": "user", "cwd": "/work/app", "message": {"content": "Original first prompt for this session"}})
+                .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            project.join("sessions-index.json"),
+            json!({"version": 1, "entries": [{"sessionId": "session-indexed", "customTitle": "Indexed name"}]})
+                .to_string(),
+        )
+        .unwrap();
+
+        let sessions = ClaudeAdapter::new(projects).find_sessions();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "Indexed name");
+    }
+
+    #[test]
+    fn generated_titles_are_not_session_names() {
+        let temp = tempdir().unwrap();
+        let projects = temp.path().join("projects");
+        let project = projects.join("project-a");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(
+            project.join("session-generated.jsonl"),
+            [
+                json!({"type": "user", "cwd": "/work/app", "message": {"content": "Original first prompt for this session"}})
+                    .to_string(),
+                json!({"type": "ai-title", "aiTitle": "Generated title"}).to_string(),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            project.join("sessions-index.json"),
+            json!({"version": 1, "entries": [{"sessionId": "session-generated", "summary": "Generated summary"}]})
+                .to_string(),
+        )
+        .unwrap();
+
+        let sessions = ClaudeAdapter::new(projects).find_sessions();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "");
     }
 
     #[test]

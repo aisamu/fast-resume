@@ -11,6 +11,7 @@ pub(super) fn session_document(fields: IndexFields, session: &Session) -> Tantiv
         fields.id => session.id.clone(),
         fields.session_key => session_key(&session.agent, &session.id),
         fields.title => session.title.clone(),
+        fields.name => session.name.clone(),
         fields.directory => session.directory.clone(),
         fields.agent => session.agent.clone(),
         fields.content => session.content.clone(),
@@ -32,6 +33,7 @@ pub(super) fn doc_to_session(fields: IndexFields, doc: &TantivyDocument) -> Opti
         text(doc, fields.content).unwrap_or_default().to_string(),
         integer(doc, fields.message_count).unwrap_or(0) as usize,
     );
+    session.name = text(doc, fields.name).unwrap_or_default().to_string();
     session.mtime = number(doc, fields.mtime).unwrap_or(0.0);
     session.yolo = boolean(doc, fields.yolo).unwrap_or(false);
     Some(session)

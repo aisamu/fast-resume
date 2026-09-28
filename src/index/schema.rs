@@ -15,6 +15,7 @@ pub(super) struct IndexFields {
     pub(super) id: Field,
     pub(super) session_key: Field,
     pub(super) title: Field,
+    pub(super) name: Field,
     pub(super) directory: Field,
     pub(super) agent: Field,
     pub(super) content: Field,
@@ -30,6 +31,7 @@ impl IndexFields {
             id: schema.get_field("id")?,
             session_key: schema.get_field("session_key")?,
             title: schema.get_field("title")?,
+            name: schema.get_field("name")?,
             directory: schema.get_field("directory")?,
             agent: schema.get_field("agent")?,
             content: schema.get_field("content")?,
@@ -48,6 +50,9 @@ pub(super) fn build_schema() -> Schema {
     schema.add_text_field("id", raw_text_options().set_fast(Some("raw")));
     schema.add_text_field("session_key", raw_text_options());
     schema.add_text_field("title", TEXT | STORED);
+    // Stored only: a named session's title already carries the name, so
+    // indexing it again would double-count it in ranking.
+    schema.add_text_field("name", STORED);
     schema.add_text_field("directory", raw_text_options());
     schema.add_text_field("agent", raw_text_options().set_fast(Some("raw")));
     schema.add_text_field("content", TEXT | STORED);

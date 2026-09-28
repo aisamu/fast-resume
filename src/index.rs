@@ -781,6 +781,31 @@ mod tests {
     }
 
     #[test]
+    fn session_names_survive_the_index_round_trip() {
+        let temp = tempdir().unwrap();
+        let index = SessionIndex::open(temp.path().join("index")).unwrap();
+        let mut named = session("a", "claude", "task/subtask", "/work/api", "content");
+        named.name = "task/subtask".to_string();
+        let unnamed = session("b", "codex", "Opening prompt", "/work/app", "content");
+        index.update_sessions(&[named, unnamed]).unwrap();
+
+        let mut names: Vec<_> = index
+            .all_sessions()
+            .unwrap()
+            .into_iter()
+            .map(|session| (session.id, session.name))
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                ("a".to_string(), "task/subtask".to_string()),
+                ("b".to_string(), String::new()),
+            ]
+        );
+    }
+
+    #[test]
     fn known_sessions_reads_mtime_from_tantivy() {
         let temp = tempdir().unwrap();
         let index = SessionIndex::open(temp.path().join("index")).unwrap();

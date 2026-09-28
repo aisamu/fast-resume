@@ -10,6 +10,12 @@ pub struct Session {
     pub id: String,
     pub agent: String,
     pub title: String,
+    /// Name the user assigned explicitly (a rename or custom title), or empty
+    /// when the agent recorded none. Unlike `title`, it never falls back to
+    /// generated summaries or the opening prompt, so callers can treat it as
+    /// the session's identity.
+    #[serde(default)]
+    pub name: String,
     pub directory: String,
     pub timestamp: DateTime<Local>,
     pub content: String,
@@ -32,6 +38,7 @@ impl Session {
             id: id.into(),
             agent: agent.into(),
             title: title.into(),
+            name: String::new(),
             directory: directory.into(),
             timestamp,
             content: content.into(),

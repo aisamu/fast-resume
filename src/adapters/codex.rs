@@ -145,10 +145,12 @@ impl CodexAdapter {
         }
         let turns = user_prompts.len();
 
-        let title_source = thread_names
-            .get(&session_id)
-            .cloned()
-            .unwrap_or_else(|| user_prompts[0].clone());
+        let name = thread_names.get(&session_id).cloned().unwrap_or_default();
+        let title_source = if name.is_empty() {
+            user_prompts[0].clone()
+        } else {
+            name.clone()
+        };
         let mut session = Session::new(
             session_id,
             self.name(),
@@ -158,6 +160,7 @@ impl CodexAdapter {
             messages.join("\n\n"),
             turns,
         );
+        session.name = name;
         session.mtime = file_mtime_seconds(path);
         session.yolo = yolo;
         Some(session)
@@ -487,6 +490,32 @@ mod tests {
         let scan = adapter.find_sessions_incremental(&known);
         assert_eq!(scan.new_or_modified.len(), 0);
         assert_eq!(scan.deleted_ids.len(), 0);
+    }
+
+    #[test]
+    fn thread_name_is_the_session_name() {
+        let temp = tempdir().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        fs::create_dir_all(sessions_dir.join("2026/06/21")).unwrap();
+        write_jsonl(
+            &sessions_dir.join("2026/06/21/rollout-named.jsonl"),
+            &[
+                json!({"type": "session_meta", "payload": {"id": "named", "cwd": "/work/app"}}),
+                json!({"type": "event_msg", "payload": {"type": "user_message", "message": "Original prompt"}}),
+                json!({"type": "response_item", "payload": {"role": "assistant", "content": [{"text": "Answer"}]}}),
+            ],
+        );
+        let session_index = temp.path().join("session_index.jsonl");
+        fs::write(
+            &session_index,
+            json!({"id": "named", "thread_name": "Named thread"}).to_string(),
+        )
+        .unwrap();
+
+        let sessions = CodexAdapter::new(sessions_dir, session_index).find_sessions();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "Named thread");
     }
 
     #[test]

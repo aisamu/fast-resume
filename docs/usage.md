@@ -106,6 +106,7 @@ fr --stats
       "id": "abc123",
       "agent": "codex",
       "title": "Review API authentication",
+      "name": null,
       "directory": "/work/backend",
       "timestamp": "2026-07-15T12:00:00+02:00",
       "message_count": 8,
@@ -125,7 +126,7 @@ fr --stats
 
 Continue with the same query and filters plus `--offset <next_offset>` only while `meta.state` is `more`. Stop on `complete` or `past_end`. `--all` returns every match from the requested offset; it conflicts with an explicit `--limit`.
 
-The JSON session objects omit indexed conversation content and internal refresh fields. `--yolo` changes supported `resume_command` values but never starts a session in JSON mode.
+The JSON session objects omit indexed conversation content and internal refresh fields. `name` is the name a user assigned explicitly (a Claude custom title, a Codex thread name, or a Pi session name), or `null` when none was recorded; `title` falls back to generated titles and the opening prompt, so only `name` is safe to treat as identity. `--yolo` changes supported `resume_command` values but never starts a session in JSON mode.
 
 Non-interactive calls refresh the index first. If another `fr` process holds the refresh lock, the call prints a notice on stderr and waits. Pass `--no-refresh` to skip the scan and serve the last indexed state immediately.
 
