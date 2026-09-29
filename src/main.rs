@@ -10,6 +10,7 @@ use clap::{Parser, ValueEnum};
 use fast_resume::adapters::all_adapters;
 use fast_resume::config::{VERSION, index_dir, is_agent};
 use fast_resume::index::SessionIndex;
+use fast_resume::model::YoloPolicy;
 use fast_resume::output::{
     DEFAULT_LIST_LIMIT, print_sessions_json, print_sessions_table, write_pick_json,
 };
@@ -85,6 +86,11 @@ struct Args {
     /// Resume sessions with auto-approve/skip-permissions flags where supported.
     #[arg(long)]
     yolo: bool,
+
+    /// Never resume with auto-approve/skip-permissions flags, not even a session
+    /// recorded in yolo mode, and skip the TUI's yolo prompt.
+    #[arg(long, conflicts_with = "yolo")]
+    no_yolo: bool,
 
     /// Write the session chosen in the TUI as JSON to FILE instead of
     /// resuming it; a cancelled pick writes a null session.
@@ -190,7 +196,7 @@ fn main() -> Result<()> {
             )
             .context("search failed")?;
         if args.json {
-            print_sessions_json(&results, total, offset, limit, args.yolo)?;
+            print_sessions_json(&results, total, offset, limit, yolo_policy(&args))?;
         } else {
             print_sessions_table(&results, total, offset);
         }
@@ -203,11 +209,12 @@ fn main() -> Result<()> {
         Some(args.image_protocol.into())
     };
 
+    let yolo = yolo_policy(&args);
     let exit = run_tui(
         query,
         args.agent,
         args.directory,
-        args.yolo,
+        yolo,
         image_protocol,
         args.theme.into(),
     )?;
@@ -282,6 +289,15 @@ fn validate_pagination_args(args: &Args) -> Result<()> {
         bail!("--no-refresh requires --json, --list, --no-tui, or --stats");
     }
     Ok(())
+}
+
+/// The policy `--yolo` and `--no-yolo` select; clap refuses both at once.
+fn yolo_policy(args: &Args) -> YoloPolicy {
+    match (args.yolo, args.no_yolo) {
+        (true, _) => YoloPolicy::Always,
+        (_, true) => YoloPolicy::Never,
+        _ => YoloPolicy::Ask,
+    }
 }
 
 fn refreshed_index(no_refresh: bool) -> Result<SessionIndex> {

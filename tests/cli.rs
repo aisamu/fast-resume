@@ -836,3 +836,52 @@ fn json_listing_carries_the_style_of_each_listed_agent() {
         );
     }
 }
+
+/// A `codex exec` run as rollouts record it: approval "never" inside a
+/// workspace-write sandbox, which fr records as yolo.
+fn write_codex_exec_session(home: &Path, id: &str) {
+    let session_dir = home.join(".codex/sessions/2026/06/28");
+    fs::create_dir_all(&session_dir).unwrap();
+    write_jsonl(
+        &session_dir.join(format!("rollout-2026-06-28T12-00-00-{id}.jsonl")),
+        &[
+            json!({"type": "session_meta", "payload": {"id": id, "cwd": "/repo/exec"}}),
+            json!({"type": "turn_context", "payload": {"approval_policy": "never", "sandbox_policy": {"type": "workspace-write"}}}),
+            json!({"type": "event_msg", "payload": {"type": "user_message", "message": "Exec prompt"}}),
+            json!({"type": "response_item", "payload": {"role": "assistant", "content": [{"text": "Done"}]}}),
+        ],
+    );
+}
+
+#[test]
+fn no_yolo_drops_the_bypass_flag_a_recorded_yolo_session_gets() {
+    let temp = TempDir::new().unwrap();
+    write_codex_exec_session(temp.path(), "exec123");
+    let bypass = "--dangerously-bypass-approvals-and-sandbox";
+    let resume_command = |args: &[&str]| -> Vec<String> {
+        let (stdout, _) = assert_success(run_fr(temp.path(), args));
+        let output: Value = serde_json::from_str(&stdout).unwrap();
+        serde_json::from_value(output["sessions"][0]["resume_command"].clone()).unwrap()
+    };
+
+    assert!(
+        resume_command(&["--json", "--all"])
+            .iter()
+            .any(|arg| arg == bypass)
+    );
+    assert!(
+        !resume_command(&["--json", "--all", "--no-yolo"])
+            .iter()
+            .any(|arg| arg == bypass)
+    );
+}
+
+#[test]
+fn yolo_and_no_yolo_cannot_be_combined() {
+    let temp = TempDir::new().unwrap();
+
+    let (stdout, stderr) = assert_failure(run_fr(temp.path(), &["--json", "--yolo", "--no-yolo"]));
+
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+}

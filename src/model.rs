@@ -60,6 +60,32 @@ impl Session {
     }
 }
 
+/// How a resume chooses yolo mode: an agent's auto-approve or
+/// skip-permissions flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum YoloPolicy {
+    /// Resume a session recorded in yolo mode in it, and let the TUI ask for
+    /// any other session of an agent that supports yolo.
+    #[default]
+    Ask,
+    /// Yolo for every session (`--yolo`).
+    Always,
+    /// Never yolo, not even for a session recorded in it (`--no-yolo`).
+    Never,
+}
+
+impl YoloPolicy {
+    /// `Some(yolo)` when the policy or the session's recorded mode decides,
+    /// `None` when only the operator can, through the TUI's prompt.
+    pub fn decide(self, session: &Session) -> Option<bool> {
+        match self {
+            Self::Always => Some(true),
+            Self::Never => Some(false),
+            Self::Ask => session.yolo.then_some(true),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RawAdapterStats {
     pub agent: &'static str,
@@ -117,4 +143,31 @@ pub fn sort_and_dedupe_sessions(sessions: Vec<Session>) -> Vec<Session> {
     let mut sessions: Vec<_> = by_key.into_values().collect();
     sessions.sort_by_key(|session| std::cmp::Reverse(session.timestamp));
     sessions
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Local;
+
+    use super::*;
+
+    fn recorded(yolo: bool) -> Session {
+        let mut session = Session::new("id", "codex", "Title", "/repo", Local::now(), "content", 1);
+        session.yolo = yolo;
+        session
+    }
+
+    #[test]
+    fn ask_keeps_a_recorded_yolo_session_in_yolo_and_leaves_the_rest_to_the_prompt() {
+        assert_eq!(YoloPolicy::Ask.decide(&recorded(true)), Some(true));
+        assert_eq!(YoloPolicy::Ask.decide(&recorded(false)), None);
+    }
+
+    #[test]
+    fn always_and_never_decide_for_every_session() {
+        for yolo in [false, true] {
+            assert_eq!(YoloPolicy::Always.decide(&recorded(yolo)), Some(true));
+            assert_eq!(YoloPolicy::Never.decide(&recorded(yolo)), Some(false));
+        }
+    }
 }

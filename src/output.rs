@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::adapters::adapter_for;
 use crate::config::AGENTS;
-use crate::model::Session;
+use crate::model::{Session, YoloPolicy};
 
 pub const DEFAULT_LIST_LIMIT: usize = 50;
 pub const LIST_SCHEMA_VERSION: u32 = 1;
@@ -28,9 +28,12 @@ struct SessionOutput<'a> {
 }
 
 impl<'a> SessionOutput<'a> {
-    fn new(session: &'a Session, force_yolo: bool) -> Self {
+    /// Post: `resume_command` carries yolo flags only when `yolo` decides for
+    /// them; with no prompt to ask, an undecided session resumes without.
+    fn new(session: &'a Session, yolo: YoloPolicy) -> Self {
+        let yolo = yolo.decide(session).unwrap_or(false);
         let resume_command = adapter_for(&session.agent)
-            .map(|adapter| adapter.resume_command(session, force_yolo || session.yolo))
+            .map(|adapter| adapter.resume_command(session, yolo))
             .unwrap_or_default();
         Self::with_command(session, resume_command)
     }
@@ -131,7 +134,7 @@ pub fn print_sessions_json(
     total: usize,
     offset: usize,
     limit: usize,
-    force_yolo: bool,
+    yolo: YoloPolicy,
 ) -> Result<()> {
     let returned = sessions.len();
     let has_more = offset.saturating_add(returned) < total;
@@ -146,7 +149,7 @@ pub fn print_sessions_json(
         schema_version: LIST_SCHEMA_VERSION,
         sessions: sessions
             .iter()
-            .map(|session| SessionOutput::new(session, force_yolo))
+            .map(|session| SessionOutput::new(session, yolo))
             .collect(),
         meta: PaginationMeta {
             state,
@@ -226,7 +229,7 @@ mod tests {
 
         let json = serde_json::to_value(SessionListOutput {
             schema_version: LIST_SCHEMA_VERSION,
-            sessions: vec![SessionOutput::new(&session, false)],
+            sessions: vec![SessionOutput::new(&session, YoloPolicy::Ask)],
             meta: PaginationMeta {
                 state: PaginationState::More,
                 total: 2,
@@ -254,8 +257,8 @@ mod tests {
         let unnamed = Session::new("u", "codex", "Prompt", "/repo", Local::now(), "content", 1);
 
         let json = serde_json::to_value([
-            SessionOutput::new(&named, false),
-            SessionOutput::new(&unnamed, false),
+            SessionOutput::new(&named, YoloPolicy::Ask),
+            SessionOutput::new(&unnamed, YoloPolicy::Ask),
         ])
         .unwrap();
 

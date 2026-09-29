@@ -95,8 +95,14 @@ fn begin_action(state: &mut AppState, action: PendingAction) -> Result<Option<Tu
     let supports_yolo = adapter_for(&session.agent)
         .as_ref()
         .is_some_and(|adapter| adapter.supports_yolo());
-    if state.yolo || session.yolo || !supports_yolo {
-        return finish_action(state, action, state.yolo || session.yolo, session);
+    // Ask only when neither the policy nor the session decides, and the agent
+    // has a yolo mode to offer.
+    if let Some(yolo) = state
+        .yolo
+        .decide(&session)
+        .or((!supports_yolo).then_some(false))
+    {
+        return finish_action(state, action, yolo, session);
     }
 
     state.modal = Some(YoloModal {

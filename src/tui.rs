@@ -18,7 +18,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 
 use crate::index::{INDEX_REFRESH_BATCH_SIZE, SessionIndex};
-use crate::model::Session;
+use crate::model::{Session, YoloPolicy};
 use crate::search::SearchEngine;
 
 mod images;
@@ -54,7 +54,7 @@ pub fn run_tui(
     query: String,
     agent_filter: Option<String>,
     directory_filter: Option<String>,
-    yolo: bool,
+    yolo: YoloPolicy,
     image_protocol: Option<ImageProtocol>,
     theme_mode: ThemeMode,
 ) -> Result<TuiExit> {
@@ -360,8 +360,9 @@ mod tests {
     use ratatui::layout::Rect;
     use tempfile::tempdir;
 
+    use crate::adapters::adapter_for;
     use crate::index::SessionIndex;
-    use crate::model::Session;
+    use crate::model::{Session, YoloPolicy};
     use crate::search::SearchEngine;
 
     use super::input::handle_key;
@@ -479,7 +480,7 @@ mod tests {
             String::new(),
             None,
             directory_filter,
-            false,
+            YoloPolicy::Ask,
             SearchEngine::from_index(index.clone()),
             None,
             Theme::dark(),
@@ -1223,11 +1224,47 @@ mod tests {
     }
 
     #[test]
+    fn never_resumes_without_the_yolo_prompt() {
+        let mut state = test_state(vec![session("a")]);
+        state.yolo = YoloPolicy::Never;
+        let selected = state.selected_session().unwrap().clone();
+        let expected = adapter_for(&selected.agent)
+            .unwrap()
+            .resume_command(&selected, false);
+
+        let exit = handle_key(&mut state, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+
+        assert!(state.modal.is_none());
+        match exit {
+            Some(super::TuiExit::Resume { command, .. }) => assert_eq!(command, expected),
+            _ => panic!("expected a resume without the yolo prompt"),
+        }
+    }
+
+    #[test]
+    fn never_resumes_a_session_recorded_in_yolo_without_its_flags() {
+        let mut recorded = session("a");
+        recorded.yolo = true;
+        let expected = adapter_for(&recorded.agent)
+            .unwrap()
+            .resume_command(&recorded, false);
+        let mut state = test_state(vec![recorded]);
+        state.yolo = YoloPolicy::Never;
+
+        let exit = handle_key(&mut state, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+
+        match exit {
+            Some(super::TuiExit::Resume { command, .. }) => assert_eq!(command, expected),
+            _ => panic!("expected a resume"),
+        }
+    }
+
+    #[test]
     fn enter_resumes_crush_sessions() {
         let mut crush = session("crush-1");
         crush.agent = "crush".to_string();
         let mut state = test_state(vec![crush]);
-        state.yolo = true;
+        state.yolo = YoloPolicy::Always;
 
         let exit = handle_key(&mut state, key(KeyCode::Enter, KeyModifiers::NONE))
             .unwrap()
